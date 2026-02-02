@@ -2,6 +2,26 @@ const { createTransporter } = require('../config/email');
 
 const sendEmail = async (to, subject, html) => {
     try {
+        // Development mode: Log email content to console instead of sending
+        if (process.env.NODE_ENV === 'development') {
+            console.log('\n' + '='.repeat(60));
+            console.log('📧 EMAIL SIMULATION (Development Mode)');
+            console.log('='.repeat(60));
+            console.log('📮 To:', to);
+            console.log('📋 Subject:', subject);
+            console.log('🔗 Email Content:');
+            // Extract URL from HTML
+            const urlMatch = html.match(/href="([^"]*reset-password[^"]*)"/);
+            if (urlMatch) {
+                console.log('\n🎯 PASSWORD RESET LINK:');
+                console.log('👉', urlMatch[1]);
+                console.log('\n💡 Copy this link and paste it in your browser!');
+            }
+            console.log('='.repeat(60) + '\n');
+            return true;
+        }
+
+        // Production mode: Send actual email
         const transporter = createTransporter();
 
         await transporter.sendMail({
@@ -48,7 +68,7 @@ const sendActivationEmail = async (email, token) => {
           <p style="color: #666; font-size: 14px;">If you didn't create an account, please ignore this email.</p>
         </div>
         <div class="footer">
-          <p>© 2024 Google Drive Clone. All rights reserved.</p>
+          <p>© 2026 Google Drive Clone. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -59,7 +79,11 @@ const sendActivationEmail = async (email, token) => {
 };
 
 const sendPasswordResetEmail = async (email, token) => {
+    console.log('📧 Preparing password reset email for:', email);
+    console.log('🔗 Reset token:', token.substring(0, 10) + '...');
+    
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${token}`;
+    console.log('🔗 Reset URL:', resetUrl);
 
     const html = `
     <!DOCTYPE html>
@@ -88,14 +112,17 @@ const sendPasswordResetEmail = async (email, token) => {
           <p style="color: #666; font-size: 14px;">If you didn't request a password reset, please ignore this email.</p>
         </div>
         <div class="footer">
-          <p>© 2024 Google Drive Clone. All rights reserved.</p>
+          <p>© 2026 Google Drive Clone. All rights reserved.</p>
         </div>
       </div>
     </body>
     </html>
   `;
 
-    return await sendEmail(email, 'Reset Your Password - Google Drive Clone', html);
+    console.log('📨 Attempting to send email...');
+    const result = await sendEmail(email, 'Reset Your Password - Google Drive Clone', html);
+    console.log('📧 Email send result:', result);
+    return result;
 };
 
 module.exports = {
