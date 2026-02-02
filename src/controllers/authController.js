@@ -32,7 +32,7 @@ exports.register = async (req, res, next) => {
         try {
             await sendActivationEmail(user.email, 'welcome');
         } catch (emailError) {
-            console.log('Welcome email failed (non-critical):', emailError.message);
+            // Email failed but user is registered successfully
         }
 
         res.status(201).json({
@@ -139,35 +139,23 @@ exports.login = async (req, res, next) => {
 exports.forgotPassword = async (req, res, next) => {
     try {
         const { email } = req.body;
-        console.log('🔐 Password reset requested for:', email);
 
         const user = await User.findOne({ email: email.toLowerCase() });
 
         // Always return success to prevent email enumeration
         if (!user) {
-            console.log('❌ User not found for email:', email);
             return res.json({
                 success: true,
                 message: 'If an account exists with this email, a password reset link will be sent.',
             });
         }
 
-        console.log('✅ User found, generating reset token...');
-        
         // Generate reset token
         const resetToken = user.generateResetToken();
         await user.save();
 
-        console.log('📧 Sending password reset email...');
-        
         // Send email
         const emailSent = await sendPasswordResetEmail(user.email, resetToken);
-        
-        if (emailSent) {
-            console.log('✅ Password reset email sent successfully');
-        } else {
-            console.log('❌ Failed to send password reset email');
-        }
 
         res.json({
             success: true,

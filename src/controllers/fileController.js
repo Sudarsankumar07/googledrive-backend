@@ -65,15 +65,48 @@ exports.uploadFile = async (req, res, next) => {
     }
 };
 
+// Helper function to calculate folder size recursively
+const calculateFolderSize = async (folderId, userId) => {
+    const contents = await File.find({
+        parentId: folderId,
+        ownerId: userId,
+        isDeleted: false
+    });
+
+    let totalSize = 0;
+
+    for (const item of contents) {
+        if (item.type === 'file') {
+            totalSize += item.size || 0;
+        } else if (item.type === 'folder') {
+            // Recursively calculate subfolder sizes
+            totalSize += await calculateFolderSize(item._id, userId);
+        }
+    }
+
+    return totalSize;
+};
+
 // Get files
 exports.getFiles = async (req, res, next) => {
     try {
         const { parentId } = req.query;
         const userId = req.user._id;
 
-        const files = await File.findByOwnerAndParent(
+        let files = await File.findByOwnerAndParent(
             userId,
             parentId === 'null' || !parentId ? null : parentId
+        );
+
+        // Calculate folder sizes dynamically
+        files = await Promise.all(
+            files.map(async (file) => {
+                const fileObj = file.toObject();
+                if (fileObj.type === 'folder') {
+                    fileObj.size = await calculateFolderSize(file._id, userId);
+                }
+                return fileObj;
+            })
         );
 
         res.json({

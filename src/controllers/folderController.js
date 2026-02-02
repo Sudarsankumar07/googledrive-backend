@@ -110,6 +110,28 @@ exports.getFolder = async (req, res, next) => {
     }
 };
 
+// Helper function to calculate folder size recursively
+const calculateFolderSize = async (folderId, userId) => {
+    const contents = await File.find({
+        parentId: folderId,
+        ownerId: userId,
+        isDeleted: false
+    });
+
+    let totalSize = 0;
+
+    for (const item of contents) {
+        if (item.type === 'file') {
+            totalSize += item.size || 0;
+        } else if (item.type === 'folder') {
+            // Recursively calculate subfolder sizes
+            totalSize += await calculateFolderSize(item._id, userId);
+        }
+    }
+
+    return totalSize;
+};
+
 // Get folder contents (files + folders)
 exports.getFolderContents = async (req, res, next) => {
     try {
@@ -137,10 +159,19 @@ exports.getFolderContents = async (req, res, next) => {
         }
 
         const contents = await File.findByOwnerAndParent(userId, parentId);
-        
+
         // Separate files and folders
         const files = contents.filter(item => item.type === 'file');
-        const folders = contents.filter(item => item.type === 'folder');
+        let folders = contents.filter(item => item.type === 'folder');
+
+        // Calculate sizes for all folders
+        folders = await Promise.all(
+            folders.map(async (folder) => {
+                const folderObj = folder.toObject();
+                folderObj.size = await calculateFolderSize(folder._id, userId);
+                return folderObj;
+            })
+        );
 
         res.json({
             success: true,
@@ -169,8 +200,21 @@ exports.getFolderPath = async (req, res, next) => {
 
         const path = [];
         let currentId = id;
+        const visited = new Set(); // Track visited folders to prevent cycles
+        const MAX_DEPTH = 100; // Safety limit for folder hierarchy depth
+        let depth = 0;
 
-        while (currentId) {
+        while (currentId && depth < MAX_DEPTH) {
+            // Check for circular references
+            if (visited.has(currentId.toString())) {
+                return res.status(500).json({
+                    success: false,
+                    message: 'Circular folder reference detected',
+                });
+            }
+
+            visited.add(currentId.toString());
+
             const folder = await File.findOne({
                 _id: currentId,
                 ownerId: userId,
@@ -182,6 +226,15 @@ exports.getFolderPath = async (req, res, next) => {
 
             path.unshift(folder);
             currentId = folder.parentId;
+            depth++;
+        }
+
+        // Check if we hit the depth limit
+        if (depth >= MAX_DEPTH) {
+            return res.status(500).json({
+                success: false,
+                message: 'Folder hierarchy too deep',
+            });
         }
 
         res.json({
@@ -316,8 +369,21 @@ exports.getBreadcrumb = async (req, res, next) => {
 
         const breadcrumb = [{ id: 'root', name: 'My Drive' }];
         let currentId = id;
+        const visited = new Set(); // Track visited folders to prevent cycles
+        const MAX_DEPTH = 100; // Safety limit for folder hierarchy depth
+        let depth = 0;
 
-        while (currentId) {
+        while (currentId && depth < MAX_DEPTH) {
+            // Check for circular references
+            if (visited.has(currentId.toString())) {
+                return res.status(500).json({
+                    success: false,
+                    message: 'Circular folder reference detected',
+                });
+            }
+
+            visited.add(currentId.toString());
+
             const folder = await File.findOne({
                 _id: currentId,
                 ownerId: userId,
@@ -329,6 +395,15 @@ exports.getBreadcrumb = async (req, res, next) => {
 
             breadcrumb.splice(1, 0, { id: folder._id.toString(), name: folder.name });
             currentId = folder.parentId;
+            depth++;
+        }
+
+        // Check if we hit the depth limit
+        if (depth >= MAX_DEPTH) {
+            return res.status(500).json({
+                success: false,
+                message: 'Folder hierarchy too deep',
+            });
         }
 
         res.json({
