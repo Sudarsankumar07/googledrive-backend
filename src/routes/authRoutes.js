@@ -41,6 +41,23 @@ const validateLogin = [
     body('password').notEmpty().withMessage('Password is required'),
 ];
 
+const validateUpdateProfile = [
+    body('firstName')
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage('First name cannot be empty')
+        .isLength({ max: 50 })
+        .withMessage('First name cannot exceed 50 characters'),
+    body('lastName')
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage('Last name cannot be empty')
+        .isLength({ max: 50 })
+        .withMessage('Last name cannot exceed 50 characters'),
+];
+
 // Routes
 router.post('/register', validateRegister, validate, authController.register);
 router.get('/activate/:token', authController.activateAccount);
@@ -56,5 +73,6 @@ router.post('/reset-password/:token',
     authController.resetPassword
 );
 router.get('/me', auth, authController.getCurrentUser);
+router.patch('/me', auth, validateUpdateProfile, validate, authController.updateProfile);
 
 module.exports = router;

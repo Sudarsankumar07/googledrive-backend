@@ -28,6 +28,15 @@ router.use(auth);
 router.post('/upload', upload.single('file'), fileController.uploadFile);
 router.get('/', fileController.getFiles);
 router.get('/search', fileController.searchFiles);
+
+// New routes for sidebar functionality
+router.get('/recent', fileController.getRecentFiles);
+router.get('/starred', fileController.getStarredFiles);
+router.get('/trash', fileController.getTrashFiles);
+router.get('/storage-stats', fileController.getStorageStats);
+router.get('/all', fileController.getAllFiles); // For analytics
+
+
 router.get('/:id/download', fileController.downloadFile);
 router.delete('/:id', fileController.deleteFile);
 router.patch('/:id/move', fileController.moveFile);
@@ -36,5 +45,12 @@ router.patch('/:id/rename',
     validate,
     fileController.renameFile
 );
+
+// New routes for star and trash operations
+router.patch('/:id/star', fileController.toggleStar);
+router.patch('/:id/restore', fileController.restoreFile);
+router.delete('/:id/permanent', fileController.permanentlyDeleteFile);
+router.delete('/trash/empty', fileController.emptyTrash);
+
 
 module.exports = router;

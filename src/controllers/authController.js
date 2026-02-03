@@ -219,3 +219,33 @@ exports.getCurrentUser = async (req, res, next) => {
         next(error);
     }
 };
+
+// Update current user profile
+exports.updateProfile = async (req, res, next) => {
+    try {
+        const { firstName, lastName } = req.body;
+
+        if (firstName !== undefined) {
+            req.user.firstName = firstName;
+        }
+        if (lastName !== undefined) {
+            req.user.lastName = lastName;
+        }
+
+        await req.user.save();
+
+        res.json({
+            success: true,
+            message: 'Profile updated successfully',
+            data: {
+                id: req.user._id,
+                email: req.user.email,
+                firstName: req.user.firstName,
+                lastName: req.user.lastName,
+                createdAt: req.user.createdAt,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};

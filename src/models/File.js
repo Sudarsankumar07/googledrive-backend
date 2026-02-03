@@ -50,6 +50,50 @@ const fileSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        isStarred: {
+            type: Boolean,
+            default: false,
+        },
+        deletedAt: {
+            type: Date,
+            default: null,
+        },
+        lastAccessedAt: {
+            type: Date,
+            default: Date.now,
+        },
+        originalParentId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'File',
+            default: null,
+        },
+
+        // AI fields (optional)
+        aiSummary: {
+            type: String,
+            default: null,
+        },
+        aiKeyPoints: [{
+            type: String,
+        }],
+        aiTags: [{
+            type: String,
+        }],
+        aiProcessedAt: {
+            type: Date,
+            default: null,
+        },
+        contentExtracted: {
+            type: String,
+            select: false,
+            default: null,
+        },
+        aiMetadata: {
+            documentType: { type: String, default: null },
+            language: { type: String, default: null },
+            sentiment: { type: String, default: null },
+            keyEntities: [{ type: String }],
+        },
     },
     {
         timestamps: true,
@@ -59,6 +103,9 @@ const fileSchema = new mongoose.Schema(
 // Indexes for faster queries (s3Key index created by unique:true)
 fileSchema.index({ ownerId: 1, parentId: 1, isDeleted: 1 });
 fileSchema.index({ ownerId: 1, createdAt: -1 });
+fileSchema.index({ ownerId: 1, isStarred: 1, isDeleted: 1 });
+fileSchema.index({ ownerId: 1, lastAccessedAt: -1, isDeleted: 1 });
+fileSchema.index({ ownerId: 1, isDeleted: 1, deletedAt: -1 });
 
 // Pre-save hook to generate path
 fileSchema.pre('save', async function (next) {
