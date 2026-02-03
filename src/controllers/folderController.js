@@ -286,19 +286,23 @@ async function deleteRecursive(parentId, userId) {
     const children = await File.find({
         parentId,
         ownerId: userId,
-        isDeleted: false,
     });
 
     for (const child of children) {
-        if (child.type === 'folder') {
-            // Recursively delete folder contents
-            await deleteRecursive(child._id, userId);
-        } else if (child.s3Key) {
-            // Delete file from S3 or local storage
-            await deleteFromS3(child.s3Key, child.s3Bucket);
+        try {
+            if (child.type === 'folder') {
+                // Recursively delete folder contents
+                await deleteRecursive(child._id, userId);
+            } else if (child.s3Key) {
+                // Delete file from S3
+                await deleteFromS3(child.s3Key);
+            }
+            // Delete from DB
+            await File.deleteOne({ _id: child._id });
+        } catch (error) {
+            console.error(`Failed to delete ${child.type} ${child._id}:`, error.message);
+            // Continue with other children even if one fails
         }
-        // Delete from DB
-        await File.deleteOne({ _id: child._id });
     }
 }
 

@@ -1,8 +1,5 @@
 const File = require('../models/File');
 const { uploadToS3, deleteFromS3, getSignedDownloadUrl } = require('../services/s3Service');
-const { getLocalFilePath } = require('../services/localStorageService');
-const fs = require('fs');
-const path = require('path');
 
 // Upload file
 exports.uploadFile = async (req, res, next) => {
@@ -93,21 +90,13 @@ exports.getFiles = async (req, res, next) => {
         const { parentId } = req.query;
         const userId = req.user._id;
 
-        let files = await File.findByOwnerAndParent(
-            userId,
-            parentId === 'null' || !parentId ? null : parentId
-        );
-
-        // Calculate folder sizes dynamically
-        files = await Promise.all(
-            files.map(async (file) => {
-                const fileObj = file.toObject();
-                if (fileObj.type === 'folder') {
-                    fileObj.size = await calculateFolderSize(file._id, userId);
-                }
-                return fileObj;
-            })
-        );
+        // Only get files, not folders
+        const files = await File.find({
+            ownerId: userId,
+            parentId: parentId === 'null' || !parentId ? null : parentId,
+            type: 'file',
+            isDeleted: false,
+        }).sort({ createdAt: -1 });
 
         res.json({
             success: true,
@@ -138,8 +127,8 @@ exports.downloadFile = async (req, res, next) => {
             });
         }
 
-        // Generate signed URL (pass bucket for local storage detection)
-        const downloadUrl = await getSignedDownloadUrl(file.s3Key, file.s3Bucket);
+        // Generate signed URL for S3
+        const downloadUrl = await getSignedDownloadUrl(file.s3Key);
 
         res.json({
             success: true,
@@ -174,8 +163,8 @@ exports.deleteFile = async (req, res, next) => {
             });
         }
 
-        // Delete from S3 or local storage
-        await deleteFromS3(file.s3Key, file.s3Bucket);
+        // Delete from S3
+        await deleteFromS3(file.s3Key);
 
         // Delete from DB (or soft delete)
         await File.deleteOne({ _id: id });
@@ -313,30 +302,6 @@ exports.searchFiles = async (req, res, next) => {
             success: true,
             data: files,
         });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// Serve local file (for local storage mode)
-exports.serveLocalFile = async (req, res, next) => {
-    try {
-        const { 0: key } = req.params;
-        const filePath = getLocalFilePath(key);
-
-        // Check if file exists
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({
-                success: false,
-                message: 'File not found',
-            });
-        }
-
-        // Get filename from key
-        const fileName = path.basename(key);
-
-        // Send file
-        res.download(filePath, fileName);
     } catch (error) {
         next(error);
     }

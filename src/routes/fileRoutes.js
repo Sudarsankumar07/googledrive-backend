@@ -21,10 +21,7 @@ const validate = (req, res, next) => {
     next();
 };
 
-// Local file download route (no auth - uses signed-like URL pattern)
-router.get('/local/*', fileController.serveLocalFile);
-
-// All other routes require authentication
+// All routes require authentication
 router.use(auth);
 
 // Routes

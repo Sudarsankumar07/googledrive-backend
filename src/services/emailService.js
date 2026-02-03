@@ -25,7 +25,7 @@ const sendEmail = async (to, subject, html) => {
         const transporter = createTransporter();
 
         await transporter.sendMail({
-            from: `"Google Drive Clone" <${process.env.EMAIL_USER}>`,
+            from: `"CloudDrive" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
             to,
             subject,
             html,
