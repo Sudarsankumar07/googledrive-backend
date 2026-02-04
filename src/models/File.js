@@ -94,6 +94,15 @@ const fileSchema = new mongoose.Schema(
             sentiment: { type: String, default: null },
             keyEntities: [{ type: String }],
         },
+
+        // Compression metadata (optional): file bytes in S3 may be stored compressed
+        compression: {
+            enabled: { type: Boolean, default: false },
+            format: { type: String, enum: ['gzip', 'zip'], default: null },
+            originalName: { type: String, default: null },
+            originalMimeType: { type: String, default: null },
+            originalSize: { type: Number, default: null },
+        },
     },
     {
         timestamps: true,

@@ -37,6 +37,7 @@ router.get('/storage-stats', fileController.getStorageStats);
 router.get('/all', fileController.getAllFiles); // For analytics
 
 
+router.get('/:id/content', fileController.downloadFileContent);
 router.get('/:id/download', fileController.downloadFile);
 router.delete('/:id', fileController.deleteFile);
 router.patch('/:id/move', fileController.moveFile);

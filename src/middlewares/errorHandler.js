@@ -50,10 +50,14 @@ const errorHandler = (err, req, res, next) => {
     // Default error
     const statusCode = err.statusCode || 500;
     const message = err.message || 'Internal server error';
+    const shouldExpose =
+        process.env.NODE_ENV !== 'production' ||
+        process.env.EXPOSE_ERRORS === 'true' ||
+        err.expose === true;
 
     res.status(statusCode).json({
         success: false,
-        message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : message,
+        message: shouldExpose ? message : 'Something went wrong',
     });
 };
 

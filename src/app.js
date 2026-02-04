@@ -5,6 +5,7 @@ const authRoutes = require('./routes/authRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const folderRoutes = require('./routes/folderRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const compressionRoutes = require('./routes/compressionRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/compression', compressionRoutes);
 
 // 404 handler
 app.use((req, res) => {

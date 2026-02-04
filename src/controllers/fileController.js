@@ -1,6 +1,78 @@
 const File = require('../models/File');
 const { uploadToS3, deleteFromS3, getSignedDownloadUrl } = require('../services/s3Service');
+const { GetObjectCommand } = require('@aws-sdk/client-s3');
+const { s3Client, S3_BUCKET } = require('../config/aws');
 const aiService = require('../services/aiService');
+const zlib = require('zlib');
+
+const safeFilename = (name) => String(name || 'download').replace(/[\r\n"]/g, '').trim() || 'download';
+
+const getUnzipper = () => {
+    try {
+        // Optional dependency (only needed if you still have legacy ZIP-compressed objects in S3)
+        // eslint-disable-next-line global-require
+        return require('unzipper');
+    } catch (e) {
+        const error = new Error('ZIP decompression requires the dependency `unzipper`. Re-upload using GZIP, or run `npm install unzipper` in googledrive-backend.');
+        error.statusCode = 501;
+        error.expose = true;
+        throw error;
+    }
+};
+
+const extractFirstFileFromZipStream = async (zipStream) => {
+    return new Promise((resolve, reject) => {
+        let resolved = false;
+        const unzipper = getUnzipper();
+        const parser = unzipper.Parse({ forceStream: true });
+
+        parser.on('entry', (entry) => {
+            if (resolved) {
+                entry.autodrain();
+                return;
+            }
+
+            if (entry.type !== 'File') {
+                entry.autodrain();
+                return;
+            }
+
+            resolved = true;
+            resolve(entry);
+        });
+
+        parser.on('error', reject);
+        parser.on('close', () => {
+            if (!resolved) {
+                reject(new Error('ZIP archive contained no files'));
+            }
+        });
+
+        zipStream.pipe(parser);
+    });
+};
+
+const getS3BodyStream = async (file) => {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_S3_BUCKET) {
+        const error = new Error('AWS S3 is not configured');
+        error.statusCode = 503;
+        throw error;
+    }
+
+    const command = new GetObjectCommand({
+        Bucket: file?.s3Bucket || S3_BUCKET,
+        Key: file.s3Key,
+    });
+
+    const response = await s3Client.send(command);
+    if (!response?.Body) {
+        const error = new Error('Failed to read file from S3');
+        error.statusCode = 502;
+        throw error;
+    }
+
+    return response.Body;
+};
 
 // Upload file
 exports.uploadFile = async (req, res, next) => {
@@ -136,17 +208,104 @@ exports.downloadFile = async (req, res, next) => {
             });
         }
 
+        if (file?.compression?.enabled) {
+            return res.json({
+                success: true,
+                data: {
+                    downloadMode: 'proxy',
+                    fileName: file.compression.originalName || file.originalName || file.name,
+                    mimeType: file.compression.originalMimeType || file.mimeType || 'application/octet-stream',
+                },
+            });
+        }
+
         // Generate signed URL for S3
         const downloadUrl = await getSignedDownloadUrl(file.s3Key);
 
         res.json({
             success: true,
             data: {
+                downloadMode: 'signedUrl',
                 downloadUrl,
                 fileName: file.originalName,
                 expiresIn: 3600,
             },
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Stream file content (auto-decompress if stored compressed)
+exports.downloadFileContent = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user._id;
+        const disposition = req.query?.disposition === 'inline' ? 'inline' : 'attachment';
+
+        const file = await File.findOne({
+            _id: id,
+            ownerId: userId,
+            type: 'file',
+            isDeleted: false,
+        });
+
+        if (!file) {
+            return res.status(404).json({
+                success: false,
+                message: 'File not found',
+            });
+        }
+
+        const originalName = file?.compression?.originalName || file.originalName || file.name;
+        const originalMimeType = file?.compression?.originalMimeType || file.mimeType || 'application/octet-stream';
+
+        res.setHeader('Content-Type', originalMimeType);
+        res.setHeader('Content-Disposition', `${disposition}; filename="${safeFilename(originalName)}"`);
+        res.setHeader('Cache-Control', 'private, no-store');
+
+        const s3Body = await getS3BodyStream(file);
+
+        req.on('close', () => {
+            if (!res.writableEnded) {
+                try { s3Body.destroy(); } catch (e) { /* ignore */ }
+            }
+        });
+
+        if (file?.compression?.enabled) {
+            const fmt = file?.compression?.format || 'gzip';
+            if (fmt !== 'gzip' && fmt !== 'zip') {
+                const error = new Error('Unsupported compression format for download');
+                error.statusCode = 501;
+                throw error;
+            }
+
+            if (fmt === 'gzip') {
+                const gunzip = zlib.createGunzip();
+                gunzip.on('error', (e) => {
+                    if (!res.headersSent) return next(e);
+                    res.destroy(e);
+                });
+                s3Body.pipe(gunzip).pipe(res);
+                return;
+            }
+
+            // Legacy ZIP (single-file zip) support
+            const entryStream = await extractFirstFileFromZipStream(s3Body);
+            entryStream.on('error', (e) => {
+                if (!res.headersSent) return next(e);
+                res.destroy(e);
+            });
+            entryStream.pipe(res);
+            return;
+        }
+
+        // Not compressed: stream raw bytes from S3
+        s3Body.on('error', (e) => {
+            if (!res.headersSent) return next(e);
+            res.destroy(e);
+        });
+        s3Body.pipe(res);
     } catch (error) {
         next(error);
     }

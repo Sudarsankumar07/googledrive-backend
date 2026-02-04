@@ -1,5 +1,18 @@
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client, S3_BUCKET } = require('../config/aws');
+const zlib = require('zlib');
+
+const getUnzipper = () => {
+    try {
+        // Optional dependency (only needed if you still have legacy ZIP-compressed objects in S3)
+        // eslint-disable-next-line global-require
+        return require('unzipper');
+    } catch (e) {
+        const error = new Error('ZIP extraction requires the dependency `unzipper`. Re-upload using GZIP, or run `npm install unzipper` in googledrive-backend.');
+        error.statusCode = 501;
+        throw error;
+    }
+};
 
 const streamToBuffer = async (readable) => {
     const chunks = [];
@@ -9,7 +22,39 @@ const streamToBuffer = async (readable) => {
     return Buffer.concat(chunks);
 };
 
-const downloadFromS3 = async (s3Key) => {
+const extractFirstFileFromZipStream = async (zipStream) => {
+    return new Promise((resolve, reject) => {
+        let resolved = false;
+        const unzipper = getUnzipper();
+        const parser = unzipper.Parse({ forceStream: true });
+
+        parser.on('entry', (entry) => {
+            if (resolved) {
+                entry.autodrain();
+                return;
+            }
+
+            if (entry.type !== 'File') {
+                entry.autodrain();
+                return;
+            }
+
+            resolved = true;
+            resolve(entry);
+        });
+
+        parser.on('error', reject);
+        parser.on('close', () => {
+            if (!resolved) {
+                reject(new Error('ZIP archive contained no files'));
+            }
+        });
+
+        zipStream.pipe(parser);
+    });
+};
+
+const downloadFromS3 = async (file) => {
     if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_S3_BUCKET) {
         const error = new Error('AWS S3 is not configured for content extraction');
         error.statusCode = 503;
@@ -18,7 +63,7 @@ const downloadFromS3 = async (s3Key) => {
 
     const command = new GetObjectCommand({
         Bucket: S3_BUCKET,
-        Key: s3Key,
+        Key: file.s3Key,
     });
 
     const response = await s3Client.send(command);
@@ -26,6 +71,24 @@ const downloadFromS3 = async (s3Key) => {
         const error = new Error('Failed to read file content from S3');
         error.statusCode = 502;
         throw error;
+    }
+
+    if (file?.compression?.enabled) {
+        const fmt = file?.compression?.format || 'gzip';
+        if (fmt !== 'gzip' && fmt !== 'zip') {
+            const error = new Error('Unsupported compression format for extraction');
+            error.statusCode = 501;
+            throw error;
+        }
+
+        if (fmt === 'gzip') {
+            const gunzip = zlib.createGunzip();
+            response.Body.pipe(gunzip);
+            return streamToBuffer(gunzip);
+        }
+
+        const entryStream = await extractFirstFileFromZipStream(response.Body);
+        return streamToBuffer(entryStream);
     }
 
     return streamToBuffer(response.Body);
@@ -55,7 +118,7 @@ const extractText = async (file, { maxChars = 25000 } = {}) => {
         throw error;
     }
 
-    const buffer = await downloadFromS3(file.s3Key);
+    const buffer = await downloadFromS3(file);
 
     if (isPdf(file)) {
         let pdfParse;
@@ -87,4 +150,3 @@ const extractText = async (file, { maxChars = 25000 } = {}) => {
 module.exports = {
     extractText,
 };
-
