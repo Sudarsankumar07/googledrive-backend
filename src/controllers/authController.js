@@ -17,29 +17,36 @@ exports.register = async (req, res, next) => {
             });
         }
 
-        // Create user - auto-activated for development
+        // Create user - INACTIVE by default
         const user = new User({
             email: email.toLowerCase(),
             password,
             firstName,
             lastName,
-            isActive: true, // Auto-activate for easier development
+            // isActive: false is the default from schema
         });
 
+        // Generate activation token BEFORE saving
+        const activationToken = user.generateActivationToken();
+        
+        // Save user with token
         await user.save();
 
-        // Optional: Still try to send welcome email (non-blocking)
+        // Send activation email with proper token
+        let emailSent = false;
         try {
-            await sendActivationEmail(user.email, 'welcome');
+            emailSent = await sendActivationEmail(user.email, activationToken);
         } catch (emailError) {
-            // Email failed but user is registered successfully
+            console.error('Failed to send activation email:', emailError);
+            // Continue - user is created, they can request resend later
         }
 
         res.status(201).json({
             success: true,
-            message: 'Registration successful! You can now login.',
+            message: 'Registration successful! Please check your email to activate your account.',
             data: {
                 userId: user._id,
+                emailSent: emailSent,
             },
         });
     } catch (error) {
@@ -52,8 +59,16 @@ exports.activateAccount = async (req, res, next) => {
     try {
         const { token } = req.params;
 
+        console.log('🔐 Activation attempt with token:', token.substring(0, 10) + '...');
+        console.log('🔐 Full token received:', token);
+
         // Hash the token to compare with stored hash
         const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+        console.log('🔐 Hashed token:', hashedToken.substring(0, 20) + '...');
+
+        // First check if any user has this token (without expiry check for debugging)
+        const anyUser = await User.findOne({ activationToken: hashedToken });
+        console.log('🔍 User with matching token (ignoring expiry):', anyUser ? anyUser.email : 'None');
 
         const user = await User.findOne({
             activationToken: hashedToken,
@@ -61,9 +76,26 @@ exports.activateAccount = async (req, res, next) => {
         });
 
         if (!user) {
+            console.log('❌ No user found with matching token or token expired');
+            console.log('⏰ Current time:', new Date(Date.now()).toISOString());
+            if (anyUser) {
+                console.log('⏰ Token expiry:', new Date(anyUser.activationTokenExpiry).toISOString());
+                console.log('⚠️  Token has EXPIRED!');
+            }
             return res.status(400).json({
                 success: false,
-                message: 'Invalid or expired activation token',
+                message: 'Invalid or expired activation token. Please request a new activation email.',
+            });
+        }
+
+        console.log('✅ Valid token found for user:', user.email);
+
+        // Check if already active
+        if (user.isActive) {
+            console.log('⚠️  User already activated:', user.email);
+            return res.json({
+                success: true,
+                message: 'Account already activated. You can login now.',
             });
         }
 
@@ -73,11 +105,14 @@ exports.activateAccount = async (req, res, next) => {
         user.activationTokenExpiry = undefined;
         await user.save();
 
+        console.log('🎉 Account activated successfully:', user.email);
+
         res.json({
             success: true,
             message: 'Account activated successfully. You can now login.',
         });
     } catch (error) {
+        console.error('❌ Activation error:', error);
         next(error);
     }
 };
@@ -108,9 +143,11 @@ exports.login = async (req, res, next) => {
 
         // Check if active
         if (!user.isActive) {
+            console.log('⚠️  Login attempt with inactive account:', user.email);
             return res.status(403).json({
                 success: false,
-                message: 'Account not activated. Please check your email.',
+                message: 'Account not activated. Please check your email for the activation link.',
+                code: 'ACCOUNT_NOT_ACTIVATED',
             });
         }
 

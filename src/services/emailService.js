@@ -11,10 +11,16 @@ const sendEmail = async (to, subject, html) => {
             console.log('📋 Subject:', subject);
             console.log('🔗 Email Content:');
             // Extract URL from HTML
-            const urlMatch = html.match(/href="([^"]*reset-password[^"]*)"/);
-            if (urlMatch) {
+            const resetMatch = html.match(/href="([^"]*reset-password[^"]*)"/);
+            const activateMatch = html.match(/href="([^"]*activate[^"]*)"/);
+            if (resetMatch) {
                 console.log('\n🎯 PASSWORD RESET LINK:');
-                console.log('👉', urlMatch[1]);
+                console.log('👉', resetMatch[1]);
+                console.log('\n💡 Copy this link and paste it in your browser!');
+            }
+            if (activateMatch) {
+                console.log('\n🎯 ACTIVATION LINK:');
+                console.log('👉', activateMatch[1]);
                 console.log('\n💡 Copy this link and paste it in your browser!');
             }
             console.log('='.repeat(60) + '\n');
@@ -39,8 +45,17 @@ const sendEmail = async (to, subject, html) => {
 };
 
 const sendActivationEmail = async (email, token) => {
-    const activationUrl = `${process.env.FRONTEND_URL}/activate/${token}`;
+    // Validate token parameter
+    if (!token || typeof token !== 'string' || token.length < 32) {
+        console.error('❌ Invalid activation token provided to sendActivationEmail');
+        throw new Error('Invalid activation token');
+    }
 
+    const activationUrl = `${process.env.FRONTEND_URL}/activate/${token}`;
+    
+    console.log('📧 Sending activation email to:', email);
+    console.log('🔗 Activation URL:', activationUrl);
+    
     const html = `
     <!DOCTYPE html>
     <html>
@@ -53,29 +68,56 @@ const sendActivationEmail = async (email, token) => {
         .content { padding: 30px; }
         .btn { display: inline-block; background: linear-gradient(135deg, #3B82F6, #2563EB); color: white !important; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
         .footer { background: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 14px; }
+        .warning { background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 20px 0; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
-          <h1>🚀 Welcome to Google Drive Clone!</h1>
+          <h1>🚀 Welcome to CloudDrive!</h1>
         </div>
         <div class="content">
           <h2>Activate Your Account</h2>
-          <p>Thank you for registering! Please click the button below to activate your account:</p>
-          <a href="${activationUrl}" class="btn">Activate Account</a>
-          <p style="color: #666; font-size: 14px;">This link will expire in 24 hours.</p>
-          <p style="color: #666; font-size: 14px;">If you didn't create an account, please ignore this email.</p>
+          <p>Thank you for registering! To complete your registration and start using CloudDrive, please activate your account by clicking the button below:</p>
+          
+          <div style="text-align: center;">
+            <a href="${activationUrl}" class="btn">Activate My Account</a>
+          </div>
+          
+          <div class="warning">
+            <strong>⏰ Important:</strong> This activation link will expire in 24 hours.
+          </div>
+          
+          <p style="color: #666; font-size: 14px;">
+            If you didn't create an account with CloudDrive, please ignore this email or contact our support team.
+          </p>
+          
+          <p style="color: #999; font-size: 12px; margin-top: 20px;">
+            Having trouble with the button? Copy and paste this link into your browser:<br>
+            <span style="word-break: break-all;">${activationUrl}</span>
+          </p>
         </div>
         <div class="footer">
-          <p>© 2026 Google Drive Clone. All rights reserved.</p>
+          <p>© 2026 CloudDrive. All rights reserved.</p>
         </div>
       </div>
     </body>
     </html>
   `;
 
-    return await sendEmail(email, 'Activate Your Account - Google Drive Clone', html);
+    const result = await sendEmail(
+        email, 
+        'Activate Your CloudDrive Account', 
+        html
+    );
+    
+    if (result) {
+        console.log('✅ Activation email sent successfully to:', email);
+    } else {
+        console.log('❌ Failed to send activation email to:', email);
+    }
+    
+    return result;
 };
 
 const sendPasswordResetEmail = async (email, token) => {
