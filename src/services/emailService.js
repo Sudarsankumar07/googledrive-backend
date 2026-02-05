@@ -1,62 +1,119 @@
+const { Resend } = require('resend');
+const sgMail = require('@sendgrid/mail');
 const { createTransporter } = require('../config/email');
 
+// Initialize email providers
+const resendApiKey = process.env.RESEND_API_KEY;
+const sendgridApiKey = process.env.SENDGRID_API_KEY;
+
+let resend;
+let emailProvider = 'smtp'; // default fallback
+
+if (resendApiKey) {
+  resend = new Resend(resendApiKey);
+  emailProvider = 'resend';
+  console.log('📧 Using Resend API for email delivery');
+} else if (sendgridApiKey) {
+  sgMail.setApiKey(sendgridApiKey);
+  emailProvider = 'sendgrid';
+  console.log('📧 Using SendGrid API for email delivery');
+} else {
+  console.log('📧 Using SMTP for email delivery');
+}
+
 const sendEmail = async (to, subject, html) => {
-    try {
-        // Development mode: Log email content to console instead of sending
-        if (process.env.NODE_ENV === 'development') {
-            console.log('\n' + '='.repeat(60));
-            console.log('📧 EMAIL SIMULATION (Development Mode)');
-            console.log('='.repeat(60));
-            console.log('📮 To:', to);
-            console.log('📋 Subject:', subject);
-            console.log('🔗 Email Content:');
-            // Extract URL from HTML
-            const resetMatch = html.match(/href="([^"]*reset-password[^"]*)"/);
-            const activateMatch = html.match(/href="([^"]*activate[^"]*)"/);
-            if (resetMatch) {
-                console.log('\n🎯 PASSWORD RESET LINK:');
-                console.log('👉', resetMatch[1]);
-                console.log('\n💡 Copy this link and paste it in your browser!');
-            }
-            if (activateMatch) {
-                console.log('\n🎯 ACTIVATION LINK:');
-                console.log('👉', activateMatch[1]);
-                console.log('\n💡 Copy this link and paste it in your browser!');
-            }
-            console.log('='.repeat(60) + '\n');
-            return true;
-        }
-
-        // Production mode: Send actual email
-        const transporter = createTransporter();
-
-        await transporter.sendMail({
-            from: `"CloudDrive" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
-            to,
-            subject,
-            html,
-        });
-
-        return true;
-    } catch (error) {
-        console.error('Email sending failed:', error);
-        return false;
+  try {
+    // Development mode: Log email content to console instead of sending
+    if (process.env.NODE_ENV === 'development') {
+      console.log('\n' + '='.repeat(60));
+      console.log('📧 EMAIL SIMULATION (Development Mode)');
+      console.log('='.repeat(60));
+      console.log('📮 To:', to);
+      console.log('📋 Subject:', subject);
+      console.log('🔗 Email Content:');
+      // Extract URL from HTML
+      const resetMatch = html.match(/href="([^"]*reset-password[^"]*)"/);
+      const activateMatch = html.match(/href="([^"]*activate[^"]*)"/);
+      if (resetMatch) {
+        console.log('\n🎯 PASSWORD RESET LINK:');
+        console.log('👉', resetMatch[1]);
+        console.log('\n💡 Copy this link and paste it in your browser!');
+      }
+      if (activateMatch) {
+        console.log('\n🎯 ACTIVATION LINK:');
+        console.log('👉', activateMatch[1]);
+        console.log('\n💡 Copy this link and paste it in your browser!');
+      }
+      console.log('='.repeat(60) + '\n');
+      return true;
     }
+
+    // Production mode: Send actual email
+    const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@clouddrive.com';
+
+    if (emailProvider === 'resend') {
+      // Use Resend API (works on Render free tier)
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
+        to,
+        subject,
+        html,
+      });
+
+      if (error) {
+        console.error('❌ Resend API error:', error);
+        throw new Error(error.message || 'Resend email failed');
+      }
+
+      console.log('✅ Email sent via Resend API to:', to);
+      console.log('📧 Resend email ID:', data?.id);
+    } else if (emailProvider === 'sendgrid') {
+      // Use SendGrid API
+      const msg = {
+        to,
+        from: fromEmail,
+        subject,
+        html,
+      };
+
+      await sgMail.send(msg);
+      console.log('✅ Email sent via SendGrid API to:', to);
+    } else {
+      // Fallback to SMTP (for local development if APIs not configured)
+      const transporter = createTransporter();
+
+      await transporter.sendMail({
+        from: `"CloudDrive" <${fromEmail}>`,
+        to,
+        subject,
+        html,
+      });
+      console.log('✅ Email sent via SMTP to:', to);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('❌ Email sending failed:', error.message);
+    if (error.response) {
+      console.error('Provider Error Details:', error.response.body || error.response);
+    }
+    return false;
+  }
 };
 
 const sendActivationEmail = async (email, token) => {
-    // Validate token parameter
-    if (!token || typeof token !== 'string' || token.length < 32) {
-        console.error('❌ Invalid activation token provided to sendActivationEmail');
-        throw new Error('Invalid activation token');
-    }
+  // Validate token parameter
+  if (!token || typeof token !== 'string' || token.length < 32) {
+    console.error('❌ Invalid activation token provided to sendActivationEmail');
+    throw new Error('Invalid activation token');
+  }
 
-    const activationUrl = `${process.env.FRONTEND_URL}/activate/${token}`;
-    
-    console.log('📧 Sending activation email to:', email);
-    console.log('🔗 Activation URL:', activationUrl);
-    
-    const html = `
+  const activationUrl = `${process.env.FRONTEND_URL}/activate/${token}`;
+
+  console.log('📧 Sending activation email to:', email);
+  console.log('🔗 Activation URL:', activationUrl);
+
+  const html = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -105,29 +162,29 @@ const sendActivationEmail = async (email, token) => {
     </html>
   `;
 
-    const result = await sendEmail(
-        email, 
-        'Activate Your CloudDrive Account', 
-        html
-    );
-    
-    if (result) {
-        console.log('✅ Activation email sent successfully to:', email);
-    } else {
-        console.log('❌ Failed to send activation email to:', email);
-    }
-    
-    return result;
+  const result = await sendEmail(
+    email,
+    'Activate Your CloudDrive Account',
+    html
+  );
+
+  if (result) {
+    console.log('✅ Activation email sent successfully to:', email);
+  } else {
+    console.log('❌ Failed to send activation email to:', email);
+  }
+
+  return result;
 };
 
 const sendPasswordResetEmail = async (email, token) => {
-    console.log('📧 Preparing password reset email for:', email);
-    console.log('🔗 Reset token:', token.substring(0, 10) + '...');
-    
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${token}`;
-    console.log('🔗 Reset URL:', resetUrl);
+  console.log('📧 Preparing password reset email for:', email);
+  console.log('🔗 Reset token:', token.substring(0, 10) + '...');
 
-    const html = `
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${token}`;
+  console.log('🔗 Reset URL:', resetUrl);
+
+  const html = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -154,20 +211,20 @@ const sendPasswordResetEmail = async (email, token) => {
           <p style="color: #666; font-size: 14px;">If you didn't request a password reset, please ignore this email.</p>
         </div>
         <div class="footer">
-          <p>© 2026 Google Drive Clone. All rights reserved.</p>
+          <p>© 2026 CloudDrive. All rights reserved.</p>
         </div>
       </div>
     </body>
     </html>
   `;
 
-    console.log('📨 Attempting to send email...');
-    const result = await sendEmail(email, 'Reset Your Password - Google Drive Clone', html);
-    console.log('📧 Email send result:', result);
-    return result;
+  console.log('📨 Attempting to send email...');
+  const result = await sendEmail(email, 'Reset Your Password - CloudDrive', html);
+  console.log('📧 Email send result:', result);
+  return result;
 };
 
 module.exports = {
-    sendActivationEmail,
-    sendPasswordResetEmail,
+  sendActivationEmail,
+  sendPasswordResetEmail,
 };
