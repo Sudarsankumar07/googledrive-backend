@@ -1,7 +1,10 @@
 const crypto = require('crypto');
 const User = require('../models/User');
+const File = require('../models/File');
+const Folder = require('../models/Folder');
 const { generateAccessToken } = require('../utils/helpers');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailSender');
+const s3Service = require('../services/s3Service');
 
 // Register new user
 exports.register = async (req, res, next) => {
@@ -304,6 +307,66 @@ exports.updateProfile = async (req, res, next) => {
                 lastName: req.user.lastName,
                 createdAt: req.user.createdAt,
             },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Delete account
+exports.deleteAccount = async (req, res, next) => {
+    try {
+        const { password } = req.body;
+        const userId = req.user._id;
+
+        if (!password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password is required to delete account',
+            });
+        }
+
+        // Get user with password
+        const user = await User.findById(userId).select('+password');
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found',
+            });
+        }
+
+        // Verify password
+        const isPasswordValid = await user.comparePassword(password);
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid password. Please try again.',
+            });
+        }
+
+        // Delete all user's files from S3 and DB
+        const userFiles = await File.find({ ownerId: userId });
+        for (const file of userFiles) {
+            if (file.s3Key) {
+                try {
+                    await s3Service.deleteFromS3(file.s3Key);
+                } catch (error) {
+                    console.error('Error deleting from S3:', error.message);
+                }
+            }
+        }
+
+        // Delete all files and folders from DB
+        await File.deleteMany({ ownerId: userId });
+        await Folder.deleteMany({ ownerId: userId });
+
+        // Delete user account
+        await User.deleteOne({ _id: userId });
+
+        res.json({
+            success: true,
+            message: 'Account deleted successfully. All your files and data have been removed.',
         });
     } catch (error) {
         next(error);

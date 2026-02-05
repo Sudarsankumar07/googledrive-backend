@@ -74,5 +74,11 @@ router.post('/reset-password/:token',
 );
 router.get('/me', auth, authController.getCurrentUser);
 router.patch('/me', auth, validateUpdateProfile, validate, authController.updateProfile);
+router.delete('/me',
+    auth,
+    body('password').notEmpty().withMessage('Password is required'),
+    validate,
+    authController.deleteAccount
+);
 
 module.exports = router;
