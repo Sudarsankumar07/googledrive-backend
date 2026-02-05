@@ -1,38 +1,42 @@
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 
-const createTransporter = () => {
-    // Debug: Log email config (remove in production)
-    console.log('📧 Email Config:', {
-        host: process.env.EMAIL_HOST,
-        port: process.env.EMAIL_PORT,
-        user: process.env.EMAIL_USER,
-        passLength: process.env.EMAIL_PASSWORD?.length || 0,
-        passPrefix: process.env.EMAIL_PASSWORD?.substring(0, 10) || 'N/A',
-    });
-
-    return nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT) || 587,
-        secure: false,
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASSWORD,
-        },
-    });
+// Initialize SendGrid
+const initializeSendGrid = () => {
+    const apiKey = process.env.SENDGRID_API_KEY;
+    
+    if (!apiKey) {
+        console.warn('⚠️  SendGrid API key not configured');
+        return false;
+    }
+    
+    sgMail.setApiKey(apiKey);
+    console.log('✅ SendGrid initialized successfully');
+    return true;
 };
 
-// Test email connection
-const verifyEmailConnection = async () => {
+// Verify SendGrid configuration
+const verifySendGridConnection = async () => {
     try {
-        const transporter = createTransporter();
-        await transporter.verify();
-        console.log('✅ Email service connected successfully');
+        const apiKey = process.env.SENDGRID_API_KEY;
+        const fromAddress = process.env.EMAIL_FROM_ADDRESS;
+        
+        if (!apiKey) {
+            console.error('❌ SENDGRID_API_KEY not configured in .env');
+            return false;
+        }
+        
+        if (!fromAddress) {
+            console.error('❌ EMAIL_FROM_ADDRESS not configured in .env');
+            return false;
+        }
+        
+        console.log('✅ SendGrid configured with sender:', fromAddress);
+        console.log('💡 Make sure', fromAddress, 'is verified in SendGrid dashboard');
         return true;
     } catch (error) {
-        console.error('❌ Email service connection failed:', error.message);
-        console.log('💡 To fix: Check your Brevo SMTP key at https://app.brevo.com/settings/keys/smtp');
+        console.error('❌ SendGrid verification failed:', error.message);
         return false;
     }
 };
 
-module.exports = { createTransporter, verifyEmailConnection };
+module.exports = { initializeSendGrid, verifySendGridConnection };

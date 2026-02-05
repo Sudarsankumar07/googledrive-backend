@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const User = require('../models/User');
 const { generateAccessToken } = require('../utils/helpers');
-const { sendActivationEmail, sendPasswordResetEmail } = require('../services/emailService');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailSender');
 
 // Register new user
 exports.register = async (req, res, next) => {
@@ -35,7 +35,7 @@ exports.register = async (req, res, next) => {
         // Send activation email with proper token
         let emailSent = false;
         try {
-            emailSent = await sendActivationEmail(user.email, activationToken);
+            emailSent = await sendVerificationEmail(user.email, user.firstName, activationToken);
         } catch (emailError) {
             console.error('Failed to send activation email:', emailError);
             // Continue - user is created, they can request resend later
@@ -192,7 +192,7 @@ exports.forgotPassword = async (req, res, next) => {
         await user.save();
 
         // Send email
-        const emailSent = await sendPasswordResetEmail(user.email, resetToken);
+        const emailSent = await sendPasswordResetEmail(user.email, user.firstName, resetToken);
 
         res.json({
             success: true,

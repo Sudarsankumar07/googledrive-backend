@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const app = require('./app');
 const connectDB = require('./config/database');
-const { verifyEmailConnection } = require('./config/email');
+const { initializeSendGrid, verifySendGridConnection } = require('./config/email');
 const { getGroqConfigSummary } = require('./config/groq');
 
 const PORT = process.env.PORT || 5000;
@@ -12,8 +12,9 @@ const startServer = async () => {
     try {
         await connectDB();
 
-        // Verify email service (non-blocking)
-        verifyEmailConnection();
+        // Initialize and verify SendGrid
+        initializeSendGrid();
+        await verifySendGridConnection();
 
         const server = app.listen(PORT, () => {
             const groq = getGroqConfigSummary();
