@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema(
         },
         password: {
             type: String,
-            required: [true, 'Password is required'],
+            required: false, // Made optional to support legacy Firebase users
             minlength: [8, 'Password must be at least 8 characters'],
             select: false,
         },
@@ -59,6 +59,9 @@ userSchema.pre('save', async function (next) {
 
 // Compare password method
 userSchema.methods.comparePassword = async function (candidatePassword) {
+    if (!this.password) {
+        return false; // No password set (legacy Firebase user)
+    }
     return await bcrypt.compare(candidatePassword, this.password);
 };
 

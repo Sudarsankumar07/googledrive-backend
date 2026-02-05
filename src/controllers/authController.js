@@ -8,6 +8,21 @@ exports.register = async (req, res, next) => {
     try {
         const { email, password, firstName, lastName } = req.body;
 
+        // Validate required fields
+        if (!email || !password || !firstName || !lastName) {
+            return res.status(400).json({
+                success: false,
+                message: 'All fields are required',
+            });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password must be at least 8 characters',
+            });
+        }
+
         // Check if user exists
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
@@ -129,6 +144,14 @@ exports.login = async (req, res, next) => {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid email or password',
+            });
+        }
+
+        // Check if user has a password (Firebase migrated users might not)
+        if (!user.password) {
+            return res.status(400).json({
+                success: false,
+                message: 'This account was created with an old authentication system. Please use "Forgot Password" to set a new password.',
             });
         }
 
