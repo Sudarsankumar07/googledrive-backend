@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const User = require('../models/User');
 const File = require('../models/File');
-const Folder = require('../models/Folder');
 const { generateAccessToken } = require('../utils/helpers');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailSender');
 const s3Service = require('../services/s3Service');
@@ -357,9 +356,8 @@ exports.deleteAccount = async (req, res, next) => {
             }
         }
 
-        // Delete all files and folders from DB
+        // Delete all files and folders from DB (folders stored as files with type='folder')
         await File.deleteMany({ ownerId: userId });
-        await Folder.deleteMany({ ownerId: userId });
 
         // Delete user account
         await User.deleteOne({ _id: userId });
